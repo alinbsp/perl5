@@ -89,7 +89,9 @@ There may well be none in a stable release.
 
 =item *
 
-XXX
+Repeated C<substr> calls on strings containing multibyte characters can again
+reuse cached character-to-byte offsets.  This fixes a performance regression
+introduced in Perl 5.36.0.  [GH #24531]
 
 =back
 

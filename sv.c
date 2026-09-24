@@ -8507,6 +8507,11 @@ S_sv_pos_u2b_midway(const U8 *const start, const U8 *send,
 {
     PERL_ARGS_ASSERT_SV_POS_U2B_MIDWAY;
 
+    /* Clamp before subtracting, and avoid hopping forward when start is
+     * already at the end of the string. */
+    if (uoffset >= uend)
+        return send - start;
+
     STRLEN backw = uend - uoffset;
 
     if (uoffset < 2 * backw) {
@@ -8575,7 +8580,9 @@ S_sv_pos_u2b_cached(pTHX_ SV *const sv, MAGIC **const mgp, const U8 *const start
                     boffset0 = cache[1];
                 }
                 if ((*mgp)->mg_len != -1) {
-                    /* And we know the end too.  */
+                    /* And we know the end too.  The position is
+                       canonical unless it lies beyond the end.  */
+                    canonical_position = uoffset <= (STRLEN)(*mgp)->mg_len;
                     boffset = boffset0
                         + sv_pos_u2b_midway(start + boffset0, send,
                                               uoffset - uoffset0,
@@ -8590,19 +8597,23 @@ S_sv_pos_u2b_cached(pTHX_ SV *const sv, MAGIC **const mgp, const U8 *const start
                 }
             }
             else if (cache[2] < uoffset) {
-                /* We're between the two cache entries.  */
+                /* We're between the two cache entries.  The sought
+                   offset is below a cached position, so it is within
+                   the string and canonical.  */
                 if (cache[2] > uoffset0) {
                     /* and the cache knows more than the passed in pair  */
                     uoffset0 = cache[2];
                     boffset0 = cache[3];
                 }
 
+                canonical_position = TRUE;
                 boffset = boffset0
                     + sv_pos_u2b_midway(start + boffset0,
                                           start + cache[1],
                                           uoffset - uoffset0,
                                           cache[0] - uoffset0);
             } else {
+                canonical_position = TRUE;
                 boffset = boffset0
                     + sv_pos_u2b_midway(start + boffset0,
                                           start + cache[3],
@@ -8615,6 +8626,7 @@ S_sv_pos_u2b_cached(pTHX_ SV *const sv, MAGIC **const mgp, const U8 *const start
             /* If we can take advantage of a passed in offset, do so.  */
             /* In fact, offset0 is either 0, or less than offset, so don't
                need to worry about the other possibility.  */
+            canonical_position = uoffset <= (STRLEN)(*mgp)->mg_len;
             boffset = boffset0
                 + sv_pos_u2b_midway(start + boffset0, send,
                                       uoffset - uoffset0,
