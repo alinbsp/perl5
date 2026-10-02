@@ -28,7 +28,7 @@ skip_all_without_unicode_tables();
 my $has_locales = locales_enabled('LC_CTYPE');
 my $utf8_locale = find_utf8_ctype_locale();
 
-plan tests => 1314;  # Update this when adding/deleting tests.
+plan tests => 1339;  # Update this when adding/deleting tests.
 
 run_tests() unless caller;
 
@@ -840,6 +840,134 @@ sub run_tests {
         is $$m, undef, 'values do not stick to @- elements';
         is $$p, undef, 'values do not stick to @+ elements';
         is $$q, undef, 'values do not stick to @{^CAPTURE} elements';
+    }
+
+    {
+        # GH #24872: cached byte-to-character conversion for match offsets.
+        package MatchOffsetOnStore {
+            sub TIESCALAR { bless [0, $_[1]], $_[0] }
+            sub FETCH { $_[0][0] }
+            sub STORE {
+                my ($self, $value) = @_;
+                $self->[0] = $value;
+                $self->[1]->();
+            }
+        }
+
+        my $offset = sub {
+            $_[0] =~ /(x)/;
+            return $-[1];
+        };
+        my $ascii = 'a' x 1200 . 'x';
+        utf8::upgrade($ascii);
+
+        for my $cache (0, 1, -1) {
+            local ${^UTF8CACHE} = $cache;
+            my $message = "UTF-8 match offsets, cache=$cache";
+
+            {
+                my (@tied, @offsets);
+                my $restoring = 0;
+                tie $tied[0], 'MatchOffsetOnStore', sub {
+                    push @offsets, $offset->($ascii) if $restoring;
+                };
+                {
+                    local $tied[0] = 1;
+                    push @offsets, $offset->("\x{100}" x 600 . 'x');
+                    $restoring = 1;
+                }
+                is("@offsets", '600 1200',
+                   "$message, match during local restoration");
+                untie $tied[0];
+            }
+
+            for my $char ('x', "\x{100}", "\x{10000}") {
+                my $s = ($char . ' abc ') x 3;
+                utf8::upgrade($s);
+                my @offsets;
+                while ($s =~ /(a)(b)(c)()(z)?/g) {
+                    push @offsets, map { defined $_ ? $_ : '-' }
+                        $+[3], $-[1], $+[0], $-[3], $+[1], $-[0],
+                        $-[4], $+[4], $-[5], $+[5];
+                }
+                is("@offsets",
+                   '5 2 5 4 3 2 5 5 - - 11 8 11 10 9 8 11 11 - - '
+                   . '17 14 17 16 15 14 17 17 - -',
+                   "$message, /g captures, character " . ord($char));
+            }
+
+            {
+                my $re = qr/(a)/;
+                my $ascii = 'bccda';
+                utf8::upgrade($ascii);
+                my ($s, @offsets);
+                for my $target ("\x{100}\x{100}a", "\x{100}bca",
+                                'bccda', $ascii, "\x{100}\x{100}a") {
+                    $s = $target;
+                    $s =~ /$re/;
+                    push @offsets, $+[1], $-[1];
+                }
+                is("@offsets", '3 2 4 3 5 4 5 4 3 2',
+                   "$message, replaced target");
+            }
+
+            {
+                my $re = qr/(x)/;
+                my $s = "\x{100}" x 3 . 'x';
+                my $readonly = "\x{100}";
+                $readonly .= 'abcx';
+                Internals::SvREADONLY($readonly, 1);
+                my @offsets;
+                for ($s, $readonly, $s) {
+                    /$re/;
+                    push @offsets, $-[1], $+[1];
+                }
+                is("@offsets", '3 4 4 5 3 4',
+                   "$message, COW and read-only targets");
+            }
+
+            {
+                my $s = "\x{100}" x 4 . 'abc';
+                $s =~ /(ab)(c)/;
+                my $end = $+[2];
+                $s = 'xyz';
+                is("$end; @-; @+", '7; 4 4 6; 7 6 7',
+                   "$message, modified target");
+            }
+
+            {
+                my @offsets;
+                my $inner = "\x{100}" x 3 . 'b';
+                my $re = qr{(a)(?{
+                    push @offsets, "$-[1],$+[1]";
+                    {
+                        $inner =~ /(b)/;
+                        push @offsets, "$-[1],$+[1]";
+                    }
+                    push @offsets, "$-[1],$+[1]";
+                })};
+                for my $s ("\x{100}\x{100}a", 'bccda', "\x{100}bca") {
+                    utf8::upgrade($s);
+                    $s =~ /$re/;
+                    push @offsets, "$-[1],$+[1]";
+                }
+                is("@offsets",
+                   '2,3 3,4 2,3 2,3 4,5 3,4 4,5 4,5 3,4 3,4 3,4 3,4',
+                   "$message, nested match in (?{})");
+            }
+        }
+
+        {
+            local ${^UTF8CACHE} = 1;
+            my @offsets = $offset->("\x{100}" x 600 . 'x');
+            {
+                local ${^UTF8CACHE} = 0;
+                push @offsets, $offset->($ascii);
+            }
+            push @offsets, $offset->($ascii);
+            is("@offsets", '600 1200 1200',
+               'UTF-8 match offsets, target replaced with caching disabled');
+        }
     }
 
     foreach ('$+[0] = 13', '$-[0] = 13', '@+ = (7, 6, 5)',

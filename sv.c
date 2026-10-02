@@ -5609,7 +5609,7 @@ Perl_sv_setsv_cow(pTHX_ SV *dsv, SV *ssv)
     STRLEN cur = SvCUR(ssv);
     STRLEN len = SvLEN(ssv);
     char *new_pv;
-    U32 new_flags = (SVt_COW|SVf_POK|SVp_POK|SVf_IsCOW);
+    U32 new_flags = (SVf_POK|SVp_POK|SVf_IsCOW);
 #if defined(PERL_DEBUG_READONLY_COW) && defined(PERL_COPY_ON_WRITE)
     const bool already = cBOOL(SvIsCOW(ssv));
 #endif
@@ -5669,11 +5669,21 @@ Perl_sv_setsv_cow(pTHX_ SV *dsv, SV *ssv)
 
   common_exit:
     SvPV_set(dsv, new_pv);
-    SvFLAGS(dsv) = new_flags;
+    SvFLAGS(dsv) = new_flags | SvTYPE(dsv) | SvMAGICAL(dsv);
     if (SvUTF8(ssv))
         SvUTF8_on(dsv);
     SvLEN_set(dsv, len);
     SvCUR_set(dsv, cur);
+    /* SvSETMAGIC() can skip the UTF-8 cache during local restoration.
+     * Clear it explicitly, keeping the allocation for the next match. */
+    if (SvMAGICAL(dsv)) {
+        MAGIC *mg = mg_find(dsv, PERL_MAGIC_utf8);
+        if (mg) {
+            mg->mg_len = -1;
+            if (mg->mg_ptr)
+                Zero(mg->mg_ptr, PERL_MAGIC_UTF8_CACHESIZE * 2, STRLEN);
+        }
+    }
 #ifdef DEBUGGING
     if (DEBUG_C_TEST)
                 sv_dump(dsv);

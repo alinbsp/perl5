@@ -1290,10 +1290,26 @@ Perl_magic_regdatum_get(pTHX_ SV *sv, MAGIC *mg)
 
                     if (RX_MATCH_UTF8(rx)) {
                         const char * const b = RX_SUBBEG(rx);
-                        if (b)
-                            i = RX_SUBCOFFSET(rx) +
-                                    utf8_length((U8*)b,
-                                        (U8*)(b-RX_SUBOFFSET(rx)+i));
+                        if (b) {
+#ifdef PERL_ANY_COW
+                            SV * const saved_copy = RXp_SAVED_COPY(ReANY(rx));
+                            /* Reuse the saved string's UTF-8 cache across /g. */
+                            if (saved_copy
+                                && SvIsCOW(saved_copy)
+                                && SvPOKp(saved_copy)
+                                && SvUTF8(saved_copy)
+                                && SvPVX(saved_copy) == b
+                                && SvCUR(saved_copy) == RX_SUBLEN(rx)
+                                && RX_SUBOFFSET(rx) == 0
+                                && RX_SUBCOFFSET(rx) == 0)
+                                i = sv_pos_b2u_flags(saved_copy, i,
+                                                     SV_CONST_RETURN);
+                            else
+#endif
+                                i = RX_SUBCOFFSET(rx) +
+                                        utf8_length((U8*)b,
+                                            (U8*)(b-RX_SUBOFFSET(rx)+i));
+                        }
                     }
 
                     sv_setuv(sv, i);

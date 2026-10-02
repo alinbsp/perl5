@@ -3543,6 +3543,8 @@ S_reg_set_capture_string(pTHX_ REGEXP * const rx,
                  && SvPOKp(RXp_SAVED_COPY(prog))
                  && SvIsCOW(sv)
                  && SvPOKp(sv)
+                 && SvUTF8(sv) == SvUTF8(RXp_SAVED_COPY(prog))
+                 && SvCUR(sv) == SvCUR(RXp_SAVED_COPY(prog))
                  && SvPVX(sv) == SvPVX(RXp_SAVED_COPY(prog))))
             {
                 /* just reuse saved_copy SV */
