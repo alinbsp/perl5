@@ -12213,7 +12213,7 @@ S_is_fork_open(const char *name)
      STMT_START { assert(name); } STMT_END
 
 static bool
-S_openn_cleanup(pTHX_ GV *gv, IO *io, PerlIO *fp, char *mode, const char *oname, PerlIO *saveifp, PerlIO *saveofp, int savefd, char savetype, int writing, bool was_fdopen, const char *type, Stat_t *statbufp)
+S_openn_cleanup(pTHX_ GV *gv, IO *io, PerlIO *fp, char *mode, const char *oname, PerlIO *saveifp, PerlIO *saveofp, int savefd, char savetype, int writing, bool was_fdopen, bool was_fh_dup, const char *type, Stat_t *statbufp)
         Perl_attribute_nonnull_aTHX
         Perl_attribute_nonnull(pTHX_1)
         Perl_attribute_nonnull(pTHX_2)
@@ -19541,6 +19541,17 @@ Perl_PerlIO_read(pTHX_ PerlIO *f, void *vbuf, Size_t count)
 # define PERL_ARGS_ASSERT_PERLIO_READ           \
      STMT_START { Perl_assert_aTHX; assert(vbuf);       \
                   PERL_UNUSED_CONTEXT_FOR_ARGS_ASSERT;  \
+    } STMT_END
+
+PERL_CALLCONV int
+Perl_PerlIO_reopen_dup(pTHX_ PerlIO *f, PerlIO *o, int fd)
+        Perl_attribute_nonnull_aTHX
+        Perl_attribute_nonnull(pTHX_1)
+        Perl_attribute_nonnull(pTHX_2)
+        __attribute__visibility__("hidden");
+# define PERL_ARGS_ASSERT_PERLIO_REOPEN_DUP     \
+     STMT_START { Perl_assert_aTHX; assert(f); assert(o);  \
+                  PERL_UNUSED_CONTEXT_FOR_ARGS_ASSERT;     \
     } STMT_END
 
 PERL_CALLCONV void

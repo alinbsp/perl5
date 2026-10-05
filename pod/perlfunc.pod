@@ -5100,6 +5100,18 @@ of IO buffers.)  If you use the three-argument
 form, then you can pass either a
 number, the name of a filehandle, or the normal "reference to a glob".
 
+When the source is a filehandle, its PerlIO layers are copied too.  This
+includes reopening C<STDIN>, C<STDOUT>, or C<STDERR>, so restoring a saved
+handle also restores its layers.  Previously, reopening a handle
+on file descriptor 0, 1, or 2 retained its old input-side layers instead.
+Consequently, adding an C<:encoding> layer between saving and restoring
+such a handle could accumulate layers on each repetition.
+
+Reopening a standard handle from a signal handler while an I/O operation
+is using it retains the existing layers, so that operation can resume.
+Duplicating a numeric file descriptor does not copy PerlIO layers from
+another filehandle.
+
 Here is a script that saves, redirects, and restores C<STDOUT> and
 C<STDERR> using various methods:
 

@@ -4675,6 +4675,7 @@ S	|bool	|openn_cleanup	|NN GV *gv				\
 				|char savetype				\
 				|int writing				\
 				|bool was_fdopen			\
+				|bool was_fh_dup			\
 				|NULLOK const char *type		\
 				|NULLOK Stat_t *statbufp
 S	|IO *	|openn_setup	|NN GV *gv				\
@@ -6881,6 +6882,7 @@ Adhp	|SSize_t|PerlIO_read	|NULLOK PerlIO *f			\
 				|Size_t count
 Xp	|void	|PerlIO_restore_errno					\
 				|NULLOK PerlIO *f
+p	|int	|PerlIO_reopen_dup|NN PerlIO *f|NN PerlIO *o|int fd
 Xp	|void	|PerlIO_save_errno					\
 				|NULLOK PerlIO *f
 Adhp	|int	|PerlIO_seek	|NULLOK PerlIO *f			\

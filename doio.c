@@ -541,7 +541,7 @@ Perl_do_open_raw(pTHX_ GV *gv, const char *oname, STRLEN len,
         fp = PerlIO_openn(aTHX_ NULL, mode, -1, rawmode, rawperm, NULL, 1, &namesv);
     }
     return openn_cleanup(gv, io, fp, mode, oname, saveifp, saveofp, savefd,
-                         savetype, writing, 0, NULL, statbufp);
+                         savetype, writing, 0, FALSE, NULL, statbufp);
 }
 
 bool
@@ -559,6 +559,7 @@ Perl_do_open6(pTHX_ GV *gv, const char *oname, STRLEN len,
     int writing = 0;
     PerlIO *fp;
     bool was_fdopen = FALSE;
+    bool was_fh_dup = FALSE;
     char *type  = NULL;
 
     /* For ease of blame back to 5.000, keep the existing indenting. */
@@ -779,6 +780,7 @@ Perl_do_open6(pTHX_ GV *gv, const char *oname, STRLEN len,
                         type = NULL;
                     if (that_fp) {
                         fp = PerlIO_fdupopen(aTHX_ that_fp, NULL, dodup);
+                        was_fh_dup = TRUE;
                     }
                     else {
                         if (dodup)
@@ -930,7 +932,7 @@ Perl_do_open6(pTHX_ GV *gv, const char *oname, STRLEN len,
 
   say_false:
     return openn_cleanup(gv, io, fp, mode, oname, saveifp, saveofp, savefd,
-                         savetype, writing, was_fdopen, type, NULL);
+                         savetype, writing, was_fdopen, was_fh_dup, type, NULL);
 }
 
 /* Yes, this is ugly, but it's private, and I don't see a cleaner way to
@@ -938,7 +940,8 @@ Perl_do_open6(pTHX_ GV *gv, const char *oname, STRLEN len,
 static bool
 S_openn_cleanup(pTHX_ GV *gv, IO *io, PerlIO *fp, char *mode, const char *oname,
                 PerlIO *saveifp, PerlIO *saveofp, int savefd, char savetype,
-                int writing, bool was_fdopen, const char *type, Stat_t *statbufp)
+                int writing, bool was_fdopen, bool was_fh_dup,
+                const char *type, Stat_t *statbufp)
 {
     PERL_ARGS_ASSERT_OPENN_CLEANUP;
 
@@ -1005,12 +1008,12 @@ S_openn_cleanup(pTHX_ GV *gv, IO *io, PerlIO *fp, char *mode, const char *oname,
 #endif /* HAS_SOCKET */
     }
 
-    /* Eeek - FIXME !!!
-     * If this is a standard handle we discard all the layer stuff
-     * and just dup the fd into whatever was on the handle before !
+    /* Preserve the descriptor and PerlIO identity of a standard handle.
+     * Filehandle duplication must also adopt the duplicated layer stack.
      */
 
     if (saveifp) {		/* must use old fp? */
+        bool replaced = FALSE;
         /* If fd is less that PL_maxsysfd i.e. STDIN..STDERR
            then dup the new fileno down
          */
@@ -1057,6 +1060,18 @@ S_openn_cleanup(pTHX_ GV *gv, IO *io, PerlIO *fp, char *mode, const char *oname,
                 SvIV_set(sv, pid);
             }
 
+        }
+#ifdef USE_PERLIO
+        if (was_fh_dup) {
+            const int result = PerlIO_reopen_dup(saveifp, fp, savefd);
+            if (result < 0) {
+                PerlIO_close(fp);
+                goto say_false;
+            }
+            replaced = result != 0;
+        }
+#endif
+        if (!replaced && savefd != fd) {
             if (was_fdopen) {
                 /* need to close fp without closing underlying fd */
                 int ofd = PerlIO_fileno(fp);
@@ -1088,7 +1103,10 @@ S_openn_cleanup(pTHX_ GV *gv, IO *io, PerlIO *fp, char *mode, const char *oname,
             if (*s == IoTYPE_IMPLICIT || *s == IoTYPE_NUMERIC)
               s++;
             *s = 'w';
-            if (!(IoOFP(io) = PerlIO_openn(aTHX_ type,s,fd,0,0,NULL,0,NULL))) {
+            IoOFP(io) = was_fh_dup
+                ? PerlIO_fdupopen(aTHX_ fp, NULL, 0)
+                : PerlIO_openn(aTHX_ type,s,fd,0,0,NULL,0,NULL);
+            if (!IoOFP(io)) {
                 PerlIO_close(fp);
                 goto say_false;
             }

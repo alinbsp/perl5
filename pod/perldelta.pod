@@ -419,6 +419,16 @@ manager will later use a regex to expand these into links.
 
 =item *
 
+Reopening C<STDIN>, C<STDOUT>, or C<STDERR> by duplicating another
+filehandle now copies its PerlIO layers as well as its descriptor.
+Saving and restoring a standard handle therefore restores its layers,
+preventing C<:encoding> layers from accumulating across repeated
+redirect/restore cycles.  Reopening from a signal handler during an
+active I/O operation retains the old stack so that the operation can
+resume.  [GH #24883]
+
+=item *
+
 Line number information is stored rather than discarded when an anonymous
 subroutine is encountered during compilation. This should improve the
 accuracy of line numbers emitted by diagnostic messages and `caller()`

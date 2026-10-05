@@ -1362,7 +1362,7 @@
 #     define argvout_final(a,b,c)               S_argvout_final(aTHX_ a,b,c)
 #     define exec_failed(a,b,c)                 S_exec_failed(aTHX_ a,b,c)
 #     define is_fork_open                       S_is_fork_open
-#     define openn_cleanup(a,b,c,d,e,f,g,h,i,j,k,l,m) S_openn_cleanup(aTHX_ a,b,c,d,e,f,g,h,i,j,k,l,m)
+#     define openn_cleanup(a,b,c,d,e,f,g,h,i,j,k,l,m,n) S_openn_cleanup(aTHX_ a,b,c,d,e,f,g,h,i,j,k,l,m,n)
 #     define openn_setup(a,b,c,d,e,f)           S_openn_setup(aTHX_ a,b,c,d,e,f)
 #     if !defined(DOSISH)
 #       define ingroup(a,b)                     S_ingroup(aTHX_ a,b)
@@ -1883,6 +1883,7 @@
 #     define magic_setcollxfrm(a,b)             Perl_magic_setcollxfrm(aTHX_ a,b)
 #   endif
 #   if defined(USE_PERLIO)
+#     define PerlIO_reopen_dup(a,b,c)           Perl_PerlIO_reopen_dup(aTHX_ a,b,c)
 #     define PerlIO_restore_errno(a)            Perl_PerlIO_restore_errno(aTHX_ a)
 #     define PerlIO_save_errno(a)               Perl_PerlIO_save_errno(aTHX_ a)
 #   endif

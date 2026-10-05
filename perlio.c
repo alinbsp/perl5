@@ -705,6 +705,73 @@ PerlIO_get_layers(pTHX_ PerlIO *f)
     return av;
 }
 
+/* Replace a standard handle's stack with an already duplicated stack,
+ * retaining its PerlIO table slot and file descriptor.  Reopen the
+ * descriptor-owning layers on fd; other layers retain the state copied by Dup.
+ * The caller has flushed the old output stream and done dup2().
+ * Return 1 after replacing the stack, 0 if it is active, or -1 on error. */
+int
+Perl_PerlIO_reopen_dup(pTHX_ PerlIO *f, PerlIO *o, int fd)
+{
+    PERL_ARGS_ASSERT_PERLIO_REOPEN_DUP;
+
+    PerlIO *layer;
+    PerlIOl *l;
+
+    /* A signal handler may reopen a handle while a read/write is using
+     * its layers.  Keep the existing stack in that case: the suspended
+     * operation must be able to resume through those same layers. */
+    if (PerlIO_lockcnt(f))
+        return 0;
+
+    for (layer = o; PerlIOValid(layer); layer = PerlIONext(layer)) {
+        PerlIO_funcs * const tab = PerlIOBase(layer)->tab;
+        PerlIOl * const next = *PerlIONext(layer);
+        PerlIO *replacement;
+        PerlIO_list_t *layers;
+        SV *arg;
+        char mode[8];
+
+        /* :unix and :stdio can occur above other layers, too.  Merely
+         * changing the bottom layer would leave their filenos unchanged. */
+        if (next && tab != &PerlIO_unix && tab != &PerlIO_stdio)
+            continue;
+        if (!tab || !tab->Open) {
+            SETERRNO(EINVAL, LIB_INVARG);
+            return -1;
+        }
+
+        layers = PerlIO_list_alloc(aTHX);
+        arg = tab->Getarg ? tab->Getarg(aTHX_ layer, NULL, 0) : NULL;
+        PerlIO_list_push(aTHX_ layers, tab, arg ? arg : &PL_sv_undef);
+        SvREFCNT_dec(arg);
+        replacement = tab->Open(aTHX_ tab, layers, 0,
+                               PerlIO_modestr(layer, mode), fd, 0, 0,
+                               NULL, 0, NULL);
+        PerlIO_list_free(aTHX_ layers);
+        if (!replacement)
+            return -1;
+
+        PerlIOBase(replacement)->flags |= PerlIOBase(layer)->flags & PERLIO_F_UTF8;
+        *PerlIONext(layer) = NULL;
+        PerlIO_close(layer);
+        *layer = *replacement;
+        *replacement = NULL;
+        PerlIOBase(layer)->next = next;
+        PerlIOBase(layer)->head = ((PerlIOl *)o)->head;
+    }
+
+    /* The new layers hold references to fd, so closing the old
+     * stream releases its buffers without closing that descriptor. */
+    PerlIO_close(f);
+    *f = *o;
+    *o = NULL;
+    for (l = *f; l; l = l->next)
+        l->head = ((PerlIOl *)f)->head;
+    VERIFY_HEAD(f);
+    return 1;
+}
+
 /*--------------------------------------------------------------------------------------*/
 /*
  * XS Interface for perl code
